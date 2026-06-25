@@ -1,0 +1,43 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: envoy-gateway
+  labels:
+    app.kubernetes.io/name: envoy-gateway
+    app.kubernetes.io/component: controller
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - infra
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway-helm
+      control-plane: envoy-gateway
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: envoy-proxy
+  labels:
+    app.kubernetes.io/name: envoy-gateway
+    app.kubernetes.io/component: proxy
+    release: monitoring
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: envoy
+      app.kubernetes.io/component: proxy
+  endpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true

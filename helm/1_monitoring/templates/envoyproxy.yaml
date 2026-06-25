@@ -1,0 +1,27 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: no-service-config
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort
+        externalTrafficPolicy: Cluster
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              ports:
+                - name: http-80
+                  port: 80
+                  nodePort: 30080
+                  targetPort: 10080
+                - name: https-443
+                  port: 443
+                  nodePort: 30443
+                  targetPort: 10443
+                - name: metrics
+                  port: 19001
+                  targetPort: 19001
