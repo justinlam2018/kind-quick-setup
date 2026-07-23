@@ -1,0 +1,72 @@
+suite: ServiceMonitor templates (Envoy -> Prometheus)
+templates:
+  - templates/servicemonitor.yaml
+tests:
+  - it: renders both envoy-gateway and envoy-proxy ServiceMonitors
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: ServiceMonitor
+        documentIndex: 0
+      - isKind:
+          of: ServiceMonitor
+        documentIndex: 1
+      - isAPIVersion:
+          of: monitoring.coreos.com/v1
+        documentIndex: 0
+      - isAPIVersion:
+          of: monitoring.coreos.com/v1
+        documentIndex: 1
+
+  - it: configures the envoy-gateway ServiceMonitor to scrape the controller metrics
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: envoy-gateway
+      - equal:
+          path: spec.namespaceSelector.matchNames[0]
+          value: infra
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: gateway-helm
+            control-plane: envoy-gateway
+      - equal:
+          path: spec.endpoints[0]
+          value:
+            port: metrics
+            path: /metrics
+            interval: 30s
+            scrapeTimeout: 10s
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: controller
+      - equal:
+          path: metadata.labels.release
+          value: monitoring
+
+  - it: configures the envoy-proxy ServiceMonitor to scrape Envoy stats from any namespace
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: metadata.name
+          value: envoy-proxy
+      - equal:
+          path: spec.namespaceSelector.any
+          value: true
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: envoy
+            app.kubernetes.io/component: proxy
+      - equal:
+          path: spec.endpoints[0].path
+          value: /stats/prometheus
+      - equal:
+          path: spec.endpoints[0].honorLabels
+          value: true
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: proxy

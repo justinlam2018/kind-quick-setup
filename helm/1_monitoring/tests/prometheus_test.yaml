@@ -1,0 +1,73 @@
+suite: Prometheus (kube-prometheus-stack) subchart
+release:
+  name: monitoring
+  namespace: infra
+tests:
+  - it: renders the Prometheus service on port 9090
+    templates:
+      - charts/kube-prometheus-stack/templates/prometheus/service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: metadata.name
+          value: monitoring-kube-prometheus-prometheus
+      - equal:
+          path: metadata.namespace
+          value: infra
+      - equal:
+          path: spec.ports[0]
+          value:
+            name: http-web
+            port: 9090
+            targetPort: 9090
+
+  - it: registers Prometheus as the default Grafana datasource
+    templates:
+      - charts/kube-prometheus-stack/templates/grafana/configmaps-datasources.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: monitoring-kube-prometheus-grafana-datasource
+      - matchRegex:
+          path: data["datasource.yaml"]
+          pattern: 'type: prometheus'
+      - matchRegex:
+          path: data["datasource.yaml"]
+          pattern: 'isDefault: true'
+      - matchRegex:
+          path: data["datasource.yaml"]
+          pattern: 'url: http://monitoring-kube-prometheus-prometheus\.infra:9090/'
+
+  - it: ships the custom envoy dashboards provisioned via values.yaml
+    templates:
+      - charts/kube-prometheus-stack/charts/grafana/templates/dashboards-json-configmap.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: monitoring-grafana-dashboards-default
+      - matchRegex:
+          path: data["envoy-gateway-overview.json"]
+          pattern: 'envoy-gateway-overview'
+      - matchRegex:
+          path: data["envoy-proxy.json"]
+          pattern: 'envoy'
+
+  - it: enables Grafana persistence and exposes it on port 3000
+    set:
+      kube-prometheus-stack:
+        grafana:
+          service:
+            port: 3000
+    templates:
+      - charts/kube-prometheus-stack/charts/grafana/templates/service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.ports[0].port
+          value: 3000

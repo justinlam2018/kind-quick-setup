@@ -1,0 +1,77 @@
+suite: Loki subchart
+release:
+  name: monitoring
+  namespace: infra
+tests:
+  - it: deploys Loki in SingleBinary mode as a single-replica StatefulSet
+    templates:
+      - charts/loki/templates/single-binary/statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: monitoring-loki
+      - equal:
+          path: metadata.namespace
+          value: infra
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.serviceName
+          value: monitoring-loki-headless
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: '^loki-7\.'
+
+  - it: targets the single-binary headless service (no backend/read/write topology)
+    templates:
+      - charts/loki/templates/single-binary/statefulset.yaml
+    asserts:
+      - equal:
+          path: spec.serviceName
+          value: monitoring-loki-headless
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: single-binary
+
+  - it: exposes the Loki http-metrics endpoint on port 3100
+    templates:
+      - charts/loki/templates/single-binary/service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: metadata.name
+          value: monitoring-loki
+      - contains:
+          path: spec.ports
+          content:
+            name: http-metrics
+            port: 3100
+            targetPort: http-metrics
+            protocol: TCP
+      - contains:
+          path: spec.ports
+          content:
+            name: grpc
+            port: 9095
+            targetPort: grpc
+            protocol: TCP
+
+  - it: applies the filesystem storage and 2d retention from values
+    templates:
+      - charts/loki/templates/config.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'retention_period: 2d'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'object_store: filesystem'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'schema: v13'

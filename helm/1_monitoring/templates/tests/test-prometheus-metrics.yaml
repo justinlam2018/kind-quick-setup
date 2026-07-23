@@ -1,0 +1,62 @@
+{{- if (index .Values "kube-prometheus-stack" "enabled") }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-test-prometheus-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: kind-infra
+    app.kubernetes.io/component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: prometheus-query
+      image: curlimages/curl:8.10.1
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+
+          PROM="http://{{ .Release.Name }}-kube-prometheus-prometheus:9090"
+
+          echo "Waiting for Prometheus to be ready at ${PROM}..."
+          for i in $(seq 1 60); do
+            if curl --silent --fail "${PROM}/-/ready" >/dev/null; then
+              echo "Prometheus is ready."
+              break
+            fi
+            sleep 2
+          done
+
+          echo "Checking Prometheus API responds with build info..."
+          if ! curl --silent --fail "${PROM}/api/v1/query?query=prometheus_build_info" \
+               | grep -q '"status":"success"'; then
+            echo "ERROR: Prometheus API did not return success for prometheus_build_info."
+            exit 1
+          fi
+
+          echo "Checking that at least one scrape target is up..."
+          UP_COUNT=$(curl --silent "${PROM}/api/v1/query?query=count(up%3D%3D1)" \
+            | sed -n 's/.*"value":\[[^,]*,"\([0-9]*\)"\].*/\1/p')
+          echo "count(up==1) = ${UP_COUNT:-0}"
+          if [ -z "${UP_COUNT}" ] || [ "${UP_COUNT}" -lt 1 ]; then
+            echo "ERROR: no healthy scrape targets reported by Prometheus."
+            exit 1
+          fi
+
+          echo "Checking that Envoy is being scraped (gateway or proxy)..."
+          ENVOY_UP=$(curl --silent "${PROM}/api/v1/query?query=count(up%7Bjob%3D~%22envoy.*%22%7D%3D%3D1)" \
+            | sed -n 's/.*"value":\[[^,]*,"\([0-9]*\)"\].*/\1/p')
+          echo "count(up{job=~\"envoy.*\"}==1) = ${ENVOY_UP:-0}"
+          if [ -z "${ENVOY_UP}" ] || [ "${ENVOY_UP}" -lt 1 ]; then
+            echo "WARNING: no envoy target is up. Is Envoy Gateway deployed somewhere in the cluster?"
+            echo "Failing the test because envoy is part of the expected monitoring coverage."
+            exit 1
+          fi
+
+          echo "SUCCESS: Prometheus metrics verification passed."
+{{- end }}

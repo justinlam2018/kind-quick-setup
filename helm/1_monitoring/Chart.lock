@@ -1,0 +1,15 @@
+dependencies:
+- name: metrics-server
+  repository: https://kubernetes-sigs.github.io/metrics-server/
+  version: 3.13.1
+- name: kube-prometheus-stack
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 87.0.1
+- name: k8s-monitoring
+  repository: https://grafana.github.io/helm-charts
+  version: 4.1.7
+- name: loki
+  repository: https://grafana.github.io/helm-charts
+  version: 7.0.0
+digest: sha256:1a81556e65189c42751c0741aa641ba3c737f530aef9eb2538d8a9eabfcaf5e7
+generated: "2026-07-01T22:24:43.656473+08:00"

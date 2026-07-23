@@ -1,0 +1,78 @@
+{{- if .Values.loki.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-test-loki-readwrite
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: kind-infra
+    app.kubernetes.io/component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: loki-readwrite
+      image: curlimages/curl:8.10.1
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+
+          LOKI="http://{{ .Release.Name }}-loki:3100"
+          # Build a 19-digit nanosecond timestamp. We avoid `date +%s%N` because
+          # busybox date in this image does not emit nanoseconds, and zero-padding
+          # the result produces a leading-zero string Loki's parser rejects.
+          TS="$(date +%s)000000000"
+          MARKER="helm-test-$(date +%s)"
+
+          echo "Waiting for Loki to be ready at ${LOKI}..."
+          for i in $(seq 1 60); do
+            if curl --silent --fail "${LOKI}/ready" >/dev/null; then
+              echo "Loki is ready."
+              break
+            fi
+            sleep 2
+          done
+
+          echo "Pushing a synthetic log line (marker=${MARKER})..."
+          HTTP_CODE=$(curl --silent --output /tmp/push.body --write-out '%{http_code}' \
+            -X POST "${LOKI}/loki/api/v1/push" \
+            -H 'Content-Type: application/json' \
+            -d "{\"streams\":[{\"stream\":{\"job\":\"helm-test\",\"source\":\"post-apply-test\"},\"values\":[[\"${TS}\",\"${MARKER}\"]]}]}")
+          echo "Push response code: ${HTTP_CODE}"
+          cat /tmp/push.body; echo
+          if [ "${HTTP_CODE}" != "204" ] && [ "${HTTP_CODE}" != "200" ]; then
+            echo "ERROR: Loki push failed (HTTP ${HTTP_CODE})."
+            exit 1
+          fi
+
+          echo "Querying the log line back..."
+          START=$(( ($(date +%s) - 300) ))
+          END=$(( ($(date +%s) + 60) ))
+          FOUND=""
+          for i in $(seq 1 30); do
+            RESP=$(curl --silent --get "${LOKI}/loki/api/v1/query_range" \
+              --data-urlencode 'query={job="helm-test"}' \
+              --data-urlencode "start=${START}000000000" \
+              --data-urlencode "end=${END}000000000" \
+              --data-urlencode 'limit=10')
+            if echo "$RESP" | grep -q "$MARKER"; then
+              FOUND="$RESP"
+              echo "Log line found in Loki."
+              break
+            fi
+            sleep 2
+          done
+
+          if [ -z "$FOUND" ]; then
+            echo "ERROR: pushed log line was not returned by Loki within timeout."
+            echo "Last response:"
+            echo "$RESP"
+            exit 1
+          fi
+
+          echo "SUCCESS: Loki read/write verified."
+{{- end }}
